@@ -17,7 +17,7 @@
   *    - Teensy 4.1
   *    - SongBeam: linear MEMS mic array with four microphones 
   *    - https://www.cuco.group/songbeam
-  *    - Headphone connections (studio headphones with 80 Ohms impedance, attention if using 16 Ohm headphones!!!) soldered to MQS pins 12 & 14 on the Teensy    
+  *    - Headphone connections (studio headphones with 80 Ohms impedance, attention if using 16 Ohm headphones!!!) soldered to MQS pins 12 & 10 on the Teensy    
   *    - ToDo: connect DAC PCM5102 and use its line output
   */
 
