@@ -15,4 +15,6 @@ The prototype sketch uses the following steps:
 * frequency domain application of the four FIR filters (FFT-convolution with FIR filter masks and subsequent iFFT) to the four mic channels
 * sum up all the delayed audio channels for the beamformed output signal
 
-The effect is not too elaborated at the moment, but it is discernible. Not sure how much attenuation I could expect from such a small linear mic array with four mics in one row with distances of 45mm, 30mm and 45mm. 
+Testing the beamforming effect should be done while steering at 45 degrees or -45 degrees, the attenuation from other directions is largest for these angles. Expect a max of about 20dB of attenuation.
+
+Avoid using 0 degrees: in this case, the expected attenuation in other directions is lower than 6dB, because in this special case no delays are applied to the mic channels.
