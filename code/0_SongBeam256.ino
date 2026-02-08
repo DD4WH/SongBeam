@@ -83,7 +83,7 @@ static float32_t float_buffer[NUM_MICS][BLOCK_SIZE];
 static float32_t beam_output[BLOCK_SIZE];
 uint8_t first_block[NUM_MICS] = {1,1,1,1};
 
-int steering_angle = 0; // steering angle in degrees, range: -90 to 90 degrees
+int steering_angle = -45; // steering angle in degrees, range: -90 to 90 degrees
 
 // FFT instance
 const static arm_cfft_instance_f32 *FFT_state;
@@ -933,10 +933,80 @@ void mic_preprocess_init(void)
     }
 }
 
+// without expansion: 
+//    Sample rate: 44.1 kHz
+//    Band of interest: 2–9 kHz → normalized band is roughly 0.09–0.41 of Nyquist.
+//    FIR length: 129 taps → plenty of time support for an accurate fractional‑delay filter 
+//    over 0–0.4 of Nyquist using a straightforward windowed‑sinc design.
+//    A 129‑tap, well‑windowed sinc fractional‑delay filter at 44.1 kHz already gives 
+//    very small group‑delay error and amplitude ripple in the 2–9 kHz band for typical delays used in short audio arrays.
+
+void generate_beamform_fir_coeffs(float theta_deg, float fir_coeffs[NUM_MICS][NUM_TAPS])
+{
+    // steering angle
+    float theta_rad = theta_deg * (float)M_PI / 180.0f;
+    float sin_theta = sinf(theta_rad);
+    printf("θ=%.1f° → sin(θ)=%.4f\n", theta_deg, sinf(theta_rad));
+    // compute geometric delays (in samples) for each mic, relative to mic 0
+    float delay_samples[NUM_MICS];
+    for (int mic = 0; mic < NUM_MICS; mic++) {
+        float x_m = mic_positions_mm[mic] / 1000.0f;              // mm -> m
+        float tau_sec = (x_m * sin_theta) / SPEED_SOUND;          // seconds
+        float D = tau_sec * sampleRate;                          // samples
+        // reference is mic 0
+        float x0_m = mic_positions_mm[0] / 1000.0f;
+        float tau0_sec = (x0_m * sin_theta) / SPEED_SOUND;
+        float D0 = tau0_sec * sampleRate;
+        delay_samples[mic] = D - D0;
+
+        printf("Mic %d: pos=%.1f mm, delay=%.4f samples\n",
+               mic, mic_positions_mm[mic], delay_samples[mic]);
+    }
+
+    // design windowed-sinc fractional-delay FIR for each mic
+    float center = (NUM_TAPS - 1) * 0.5f;
+
+    for (int mic = 0; mic < NUM_MICS; mic++) {
+        float D = delay_samples[mic];   // desired fractional delay (in samples)
+        float sum_coeffs = 0.0f;
+
+        for (int n = 0; n < NUM_TAPS; n++) {
+            float t = (float)n - center - D;   // n - center - delay
+
+            float sinc_val;
+            if (fabsf(t) < 1e-6f) {
+                sinc_val = 1.0f;
+            } else {
+                float x = (float)M_PI * t;
+                sinc_val = sinf(x) / x;
+            }
+
+            // Hann window
+            //float32_t window = 0.5f * (1.0f - cosf(2.0f * (float)M_PI * (float)n / (float)(NUM_TAPS - 1)));
+            // Blackman window
+            //float32_t window = 0.42f - 0.5f * cosf(2.0f * M_PI * n / (NUM_TAPS - 1)) + 
+                   //0.08f * cosf(4.0f * M_PI * n / (NUM_TAPS - 1));
+            // Blackman Harris window 
+            float32_t window = 0.4243801f - 0.4973406f * cosf(2.0f * M_PI * n / (NUM_TAPS - 1)) + 
+                   0.0782793f * cosf(4.0f * M_PI * n / (NUM_TAPS - 1));
+
+            float h = sinc_val * window;
+            fir_coeffs[mic][n] = h;
+            sum_coeffs += h;
+        }
+
+        // normalize to unity DC gain
+        if (fabsf(sum_coeffs) > 1e-6f) {
+            float inv = 1.0f / sum_coeffs;
+            for (int n = 0; n < NUM_TAPS; n++) {
+                fir_coeffs[mic][n] *= inv;
+            }
+        }
+    }
+}
 
 #define EXPANSION_FACTOR 5
-
-void generate_beamform_fir_coeffs(float theta_degrees, 
+void generate_beamform_fir_coeffs_old(float theta_degrees, 
                                   float32_t fir_coeffs[NUM_MICS][NUM_TAPS])
 // new version, no filtering, expanded delay                                  
 {
