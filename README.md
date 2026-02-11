@@ -3,6 +3,9 @@ Songrecorder using beamforming technology
 
 0_SongBeam256.ino supports standalone realtime beamforming with Teensy 4.1 and SongBeam by delay-and-sum beamforming.
 
+See this forum discussion for further information:
+https://forum.pjrc.com/index.php?threads/songbeam-realtime-beamforming-with-four-mems-mics.77664/
+
 It is a prototype sketch using MQS for the output of the beamformed audio. Plan is to properly connect a DAC PCM5102 later.
 
 The prototype sketch uses the following steps:
