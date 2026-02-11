@@ -15,6 +15,3 @@ The prototype sketch uses the following steps:
 * frequency domain application of the four FIR filters (FFT-convolution with FIR filter masks and subsequent iFFT) to the four mic channels
 * sum up all the delayed audio channels for the beamformed output signal
 
-Testing the beamforming effect should be done while steering at 45 degrees or -45 degrees, the attenuation from other directions is largest for these angles. Expect a max of about 20dB of attenuation.
-
-Avoid using 0 degrees: in this case, the expected attenuation in other directions is lower than 6dB, because in this special case no delays are applied to the mic channels.
