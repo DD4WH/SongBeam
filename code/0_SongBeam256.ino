@@ -417,16 +417,17 @@ void loop() {
         
             // 4. Compute RMS from updated buffer
             // RMS normalization (use FULL window average)
-            float32_t rms_sum = 0.0f;
+            //float32_t rms_sum = 0.0f;
             
             // Sum ALL samples in circular buffer
-            for (uint32_t i = 0; i < NORM_WINDOW; i++) 
+        /*    for (uint32_t i = 0; i < NORM_WINDOW; i++) 
             {
                 rms_sum += norm_buffer[mic][i];
             }
-            
+          */  
             // Compute RMS over FULL window (not just block)
-            float32_t rms = sqrtf(rms_sum / NORM_WINDOW);
+//            float32_t rms = sqrtf(rms_sum / NORM_WINDOW);
+            float32_t rms = sqrtf(norm_sum[mic] / NORM_WINDOW);
             
             // 5. Compute gain
             // Conservative gain: target RMS = -20dBFS (0.1), max gain = 10
@@ -451,8 +452,6 @@ void loop() {
                 // with precalculated FIR fractional delay coefficients
                 // specific for each microphone
                 Fast_Convolution(mic);
-                // Scaling / Amplification
-                arm_scale_f32 (&float_buffer[mic][0], 10.0f, &float_buffer[mic][0], BLOCK_SIZE);       
             }             
 
 /***********************************************************************
@@ -463,7 +462,9 @@ void loop() {
             {
                 beam_output[i] = (float_buffer[0][i] + float_buffer[1][i] + float_buffer[2][i] + float_buffer[3][i]) * 0.25f;
             }
-            
+            // Scaling / Amplification
+            arm_scale_f32 (beam_output, 10.0f, beam_output, BLOCK_SIZE);
+                         
             // play audio via MQS / I2S
             sp_L = queueOUT2.getBuffer();    
             sp_R = queueOUT1.getBuffer();
@@ -909,7 +910,7 @@ void Fast_Convolution(uint8_t channel)
       // complex multiply with filter mask
       arm_cmplx_mult_cmplx_f32 (FFT_buffer, &filter_mask[channel][0], iFFT_buffer, FFT_LEN);
 
-      // perform iFFT (in-place)
+      // perform iFFT (in-place) - CMSIS function arm_cfft_f32: "The inverse transform includes a scale of 1/fftLen as part of the calculation"
       arm_cfft_f32(iFFT_state, iFFT_buffer, 1, 1);
 
       // overlap & save -> use only 2nd part of iFFT buffer, use only real part
@@ -1092,10 +1093,10 @@ void generate_bandpass_fir(float32_t coeffs[FIR_NUM_TAPS]) {
         // Hamming window
         //float32_t window = 0.54f - 0.46f * cosf(2.0f * PI * (float32_t)n / (float32_t)M);
         // Blackman window
-        float32_t window = 0.42f - 0.5f * cosf(2.0f * M_PI * n / (NUM_TAPS - 1)) + 
-               0.08f * cosf(4.0f * M_PI * n / (NUM_TAPS - 1));
+        float32_t window = 0.42f - 0.5f * cosf(2.0f * M_PI * (float32_t)n / (float32_t)M) + 
+               0.08f * cosf(4.0f * M_PI * (float32_t)n / (float32_t)M);
         // Hann
-        //float window = 0.5f * (1.0f - cosf(2.0f * M_PI * n / (NUM_TAPS - 1)));
+        //float window = 0.5f * (1.0f - cosf(2.0f * M_PI * (float32_t)n / (float32_t)M));
         
         // Apply window
         coeffs[n] = ideal_h * window;
