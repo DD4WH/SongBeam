@@ -3,6 +3,7 @@
   *       by Frank Dziock DD4WH, 07.02.2026
   *  
   *  - linear microphone array with 4 MEMS IM69D130 (SNR 69dbA) and PDM-to-I2S converter ADAU7002
+  *  - switch between 4-channel time-scheduled recording OR realtime-beamforming
   *  - separate FIR Bandpass filters for all four mics
   *  - normalization of each mic signal separately
   *  - frequency domain fractional delay (expansion factor 5) FIR filters
@@ -11,6 +12,7 @@
   *  - plan is to use a DAC PCM5102 for I2S output
   *  
   *  - included code for correct file timestamps
+  *  - enabled sample rate choice by user (tested: 24 & 48ksps)
   *  - warnings eliminated
   *    
   *    HARDWARE
@@ -40,7 +42,8 @@
 
 
 #include "arm_math.h"
-#include "arm_const_structs.h"
+#include "arm_const_structs.h" // for CMSIS functions like FFT / FIR etc
+#include <utility/imxrt_hw.h> // for set_audioClock
 
 extern "C" uint32_t set_arm_clock(uint32_t frequency);
 
@@ -96,8 +99,11 @@ unsigned long ChunkSize = 0L;
 unsigned long Subchunk1Size = 16;
 unsigned int AudioFormat = 1;
 unsigned int numChannels = 4;
-unsigned long sampleRate = 44100;
-//unsigned long sampleRate = 48000; // does not work properly, DD4WH
+//unsigned long sampleRate = 44100; // works
+//unsigned long sampleRate = 48000; // works
+//unsigned long sampleRate = 96000; // DOES NOT WORK
+unsigned long sampleRate = 24000; // works
+
 unsigned int bitsPerSample = 16;
 unsigned long byteRate = sampleRate*numChannels*(bitsPerSample/8);// samplerate x channels x (bitspersample / 8)
 unsigned int blockAlign = numChannels*bitsPerSample/8;  
@@ -123,7 +129,7 @@ AudioConnection          patchCord4(audioInput2, 1, queue4, 0);
 AudioConnection          patchCord5(queueOUT2, 0, mqs1, 1);
 AudioConnection          patchCord6(queueOUT1, 0, mqs1, 0);
 
-int8_t passthru = 1; // for testing, stops recording and starts MQS realtime audio processing
+int8_t passthru = 0; // for testing, stops recording and starts MQS realtime audio processing
 
 
 byte bufferL[BLOCK_SIZE * 2]; // Blocksize 128 x 2 bytes
@@ -310,25 +316,30 @@ void setup() {
    /********************************************
    * Calculate beamforming fractional delay FIR coeffs and init FFT_mask
    ********************************************/
-  // steering angle in degrees is given here
-  generate_beamform_fir_coeffs(steering_angle, fir_coeffs);
-  
-  for(uint8_t i=0; i<4; i++)
-  {
-      init_filter_mask(i);
-  }
+      // steering angle in degrees is given here
+      generate_beamform_fir_coeffs(steering_angle, fir_coeffs);
+      
+      for(uint8_t i=0; i<4; i++)
+      {
+          init_filter_mask(i);
+      }
 
-  Serial.println("Initialization ready");
-  
-  delay(1000);
-  
-  if(passthru == 1)
-  {
-      queue1.begin();
-      queue2.begin();
-      queue3.begin();
-      queue4.begin();
-  }
+   /********************************************
+   * set sample rate for both I2S1 and I2S2
+   ********************************************/
+      setI2SFreq(sampleRate);
+    
+      Serial.println("Initialization ready");
+      
+      delay(1000);
+      
+      if(passthru == 1)
+      {
+          queue1.begin();
+          queue2.begin();
+          queue3.begin();
+          queue4.begin();
+      }
 } // END of SETUP
 
 
@@ -1112,4 +1123,24 @@ void generate_bandpass_fir(float32_t coeffs[FIR_NUM_TAPS]) {
     for (int32_t n = 0; n < FIR_NUM_TAPS; n++) {
         coeffs[n] /= max_abs;
     }
+}
+
+// set samplerate code by Frank Bösing
+void setI2SFreq(int freq) 
+{
+  // PLL between 27*24 = 648MHz und 54*24=1296MHz
+  int n1 = 4; //SAI prescaler 4 => (n1*n2) = multiple of 4
+  int n2 = 1 + (24000000 * 27) / (freq * 256 * n1);
+  double C = ((double)freq * 256 * n1 * n2) / 24000000;
+  int c0 = C;
+  int c2 = 10000;
+  int c1 = C * c2 - (c0 * c2);
+  set_audioClock(c0, c1, c2, true);
+  CCM_CS1CDR = (CCM_CS1CDR & ~(CCM_CS1CDR_SAI1_CLK_PRED_MASK | CCM_CS1CDR_SAI1_CLK_PODF_MASK))
+       | CCM_CS1CDR_SAI1_CLK_PRED(n1-1) // &0x07
+       | CCM_CS1CDR_SAI1_CLK_PODF(n2-1); // &0x3f 
+  // added by DD4WH for I2S2     
+  CCM_CS2CDR = (CCM_CS2CDR & ~(CCM_CS2CDR_SAI2_CLK_PRED_MASK | CCM_CS2CDR_SAI2_CLK_PODF_MASK))
+   | CCM_CS2CDR_SAI2_CLK_PRED(n1-1)
+   | CCM_CS2CDR_SAI2_CLK_PODF(n2-1);
 }
